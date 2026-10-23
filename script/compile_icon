@@ -37,14 +37,23 @@ echo "Compiling .icon bundle for $CHANNEL channel"
 BUNDLED_RESOURCES_DIR="$APP_BUNDLE_PATH/Contents/Resources"
 PARTIAL_INFO_PLIST="$(dirname "$APP_BUNDLE_PATH")/partial-icon-info.plist"
 
-# Compile the .icon bundle using actool
+# Compile the .icon bundle using actool. The Command Line Tools have no actool, so don't let that
+# abort the script before the prebuilt fallback below.
 xcrun actool \
   --compile "$BUNDLED_RESOURCES_DIR" \
   --platform macosx \
   --minimum-deployment-target 10.14 \
   --app-icon AppIcon \
   --output-partial-info-plist "$PARTIAL_INFO_PLIST" \
-  "$ICON_BUNDLE_PATH"
+  "$ICON_BUNDLE_PATH" || true
+
+# Xcode < 26 can't compile .icon bundles; reuse assets compiled from the same AppIcon.icon by a
+# Harp release built with Xcode 26. Rebuild prebuilt/ whenever AppIcon.icon changes.
+PREBUILT_DIR="$(dirname "$ICON_BUNDLE_PATH")/prebuilt"
+if [[ ! -f "$BUNDLED_RESOURCES_DIR/Assets.car" && -f "$PREBUILT_DIR/Assets.car" ]]; then
+    echo "actool could not compile $ICON_BUNDLE_PATH; using the prebuilt icon assets." >&2
+    cp "$PREBUILT_DIR/Assets.car" "$PREBUILT_DIR/AppIcon.icns" "$BUNDLED_RESOURCES_DIR/"
+fi
 
 # Earlier XCode versions won't build the correct asset format for adaptive icons
 if [[ ! -f "$BUNDLED_RESOURCES_DIR/Assets.car" ]]; then

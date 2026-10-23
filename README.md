@@ -83,9 +83,12 @@ and settings folder (`~/.harp`), so it runs next to Warp without sharing anythin
 ./script/run         # builds target/debug/bundle/osx/Harp.app and launches it
 ```
 
-`script/macos/run` signs with the first "Apple Development" identity in your keychain and falls
-back to an ad-hoc signature. A signed, notarizable release DMG comes from `script/release_macos`
-(see `--help`).
+`script/macos/run` signs with a code-signing certificate named "Harp Local" if your keychain has one
+(a self-signed one from Keychain Access works), then the first "Apple Development" identity, then
+an ad-hoc signature. Only a named identity keeps macOS folder-access grants across rebuilds.
+`script/macos/install_local [--release]` builds the same way without launching and replaces
+`/Applications/Harp.app`. A signed, notarizable release DMG comes from `script/release_macos` (see
+`--help`).
 
 ## Settings
 
