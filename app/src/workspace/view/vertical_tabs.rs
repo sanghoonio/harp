@@ -461,15 +461,14 @@ fn render_pane_row_element(
             } else {
                 surface
             };
-            return surface
-                .paint(
-                    Container::new(content)
-                        .with_padding(padding)
-                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-                            sidebar::ROW_RADIUS,
-                        ))),
-                )
-                .finish();
+            let container = Container::new(content)
+                .with_padding(padding)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(sidebar::ROW_RADIUS)));
+            return match pane_color {
+                Some(color) => surface.paint_tinted(container, color.into_solid()),
+                None => surface.paint(container),
+            }
+            .finish();
         }
         // Hovered or selected rows always fully round; otherwise derive the
         // resting radius from the row's stack position.
@@ -3868,10 +3867,12 @@ fn render_grouped_tab_container(
             .resolve(None)
             .map(|c| c.to_ansi_color(&theme.terminal_colors().normal).into());
         let is_highlighted = hover_state.is_hovered() || any_member_active;
-        // In the framed sidebar only the selected row carries a surface; a tinted group would
-        // compete with it.
+        // The framed sidebar keeps a colored group at its resting tint so it doesn't compete
+        // with the selected row's surface.
         let background = if framed {
-            ThemeFill::Solid(ColorU::transparent_black())
+            group_color_fill.map_or(ThemeFill::Solid(ColorU::transparent_black()), |color| {
+                color.with_opacity(TAB_COLOR_OPACITY)
+            })
         } else if let Some(color) = group_color_fill {
             // Highlight a colored tab group when it is hovered or active,
             // but not as much as regular colored active tabs (otherwise
@@ -3905,7 +3906,7 @@ fn render_grouped_tab_container(
         let mut container = Container::new(content.finish())
             .with_padding(padding)
             .with_background(background);
-        if needs_outer_horizontal_padding {
+        if needs_outer_horizontal_padding && !framed {
             // Pane view: match regular tab containers — flat corners with a top
             // divider (plus a bottom divider when this is the last item) rather
             // than a rounded card.
@@ -8954,6 +8955,7 @@ pub(super) mod sidebar {
     use pathfinder_geometry::vector::vec2f;
     use warp_core::ui::Icon as WarpIcon;
     use warp_core::ui::color::blend::Blend;
+    use warp_core::ui::color::coloru_with_opacity;
     use warp_core::ui::theme::Fill as WarpThemeFill;
     use warpui::elements::{
         Border, ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
@@ -9451,6 +9453,8 @@ pub(super) mod sidebar {
         }
     }
 
+    const SELECTED_TINT_OPACITY: u8 = 22;
+
     /// The surface a row paints itself.
     #[derive(Clone, Copy, PartialEq, Eq)]
     pub(super) enum RowSurface {
@@ -9484,6 +9488,25 @@ pub(super) mod sidebar {
                         Border::all(0.5).with_border_color(colors::SELECTED_EDGE()),
                     )
                     .with_drop_shadow(css_shadow(colors::SELECTED_SHADOW(), 1., 2.)),
+            }
+        }
+
+        /// [`Self::paint`] for a row whose tab has a color: every fill takes the color's tint,
+        /// the selected ones over their own surface so the selection still reads.
+        pub(super) fn paint_tinted(self, container: Container, color: ColorU) -> Container {
+            let tint = |opacity| coloru_with_opacity(color, opacity);
+            match self {
+                RowSurface::None => container.with_background_color(tint(super::TAB_COLOR_OPACITY)),
+                RowSurface::Hovered | RowSurface::Target => {
+                    container.with_background_color(tint(super::TAB_COLOR_HOVER_OPACITY))
+                }
+                RowSurface::Placeholder => container,
+                RowSurface::Selected => self
+                    .paint(container)
+                    .with_background_color(colors::WHITE().blend(&tint(SELECTED_TINT_OPACITY))),
+                RowSurface::SelectedQuiet => self.paint(container).with_background_color(
+                    colors::QUIET_SELECTED().blend(&tint(SELECTED_TINT_OPACITY)),
+                ),
             }
         }
     }
@@ -9639,9 +9662,10 @@ pub(super) mod sidebar {
         title: String,
         ink: ColorU,
         unread: bool,
+        selected: bool,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let weight = if unread {
+        let weight = if unread || selected {
             Weight::Semibold
         } else {
             Weight::Normal
@@ -9729,7 +9753,11 @@ pub(super) mod sidebar {
                 time_string.as_deref(),
             );
         }
-        let title = row_title_text(title_string, scale_alpha(ink, fade), unread, app);
+        let selected = matches!(
+            props.sidebar_surface,
+            Some(RowSurface::Selected | RowSurface::SelectedQuiet)
+        );
+        let title = row_title_text(title_string, scale_alpha(ink, fade), unread, selected, app);
         let time =
             time_string.map(|time| row_time_text(time, scale_alpha(colors::SUB(), fade), app));
 
@@ -9781,7 +9809,7 @@ pub(super) mod sidebar {
             colors::INK()
         };
         let line = row_line(
-            row_title_text(title, ink, unread, app),
+            row_title_text(title, ink, unread, false, app),
             status_time(status, terminal_view_id, app)
                 .map(|time| row_time_text(time, colors::SUB(), app)),
             status_icon(status, unread, None),
