@@ -130,6 +130,20 @@ NO_LICENSES=1 "${REPO_ROOT}/script/prepare_bundled_resources" "$WARP_APP_PATH/Co
 
 "${REPO_ROOT}/script/compile_icon" "$WARP_CHANNEL" "$WARP_APP_PATH"
 
+# Finder's "New Harp Tab/Window Here" services, as script/macos/bundle registers them for releases.
+if [ "$WARP_CHANNEL" = "oss" ]; then
+  service() {
+    echo "<dict>
+      <key>NSMenuItem</key><dict><key>default</key><string>$1</string></dict>
+      <key>NSMessage</key><string>$2</string>
+      <key>NSRequiredContext</key><dict><key>NSTextContent</key><string>FilePath</string></dict>
+      <key>NSSendTypes</key><array><string>NSFilenamesPboardType</string><string>public.plain-text</string></array>
+    </dict>"
+  }
+  plutil -insert NSServices -xml "<array>$(service "New Harp Tab Here" openTab)$(service "New Harp Window Here" openWindow)</array>" \
+    "$WARP_APP_PATH/Contents/Info.plist"
+fi
+
 if [[ ",$FEATURES," =~ ",heap_usage_tracking," ]]; then
   echo "Bundling pprof..."
   HELPERS_DIR="$WARP_APP_PATH/Contents/Helpers"
@@ -145,7 +159,11 @@ if [[ ",$FEATURES," =~ ",warp_control_cli," ]]; then
 fi
 
 echo "Codesigning app..."
-SIGNING_CERT="$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)"
+# A stable identity keeps macOS privacy grants (folder access) across rebuilds; an ad-hoc signature
+# is keyed to the binary's hash, so every build asks again. The self-signed "Harp Local"
+# certificate isn't trusted, so `find-identity -v` would skip it.
+SIGNING_CERT="$(security find-identity -p codesigning | grep '"Harp Local"' | awk '{print $2}' | head -1)"
+SIGNING_CERT="${SIGNING_CERT:-$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)}"
 codesign --force --deep --options runtime --sign "${SIGNING_CERT:--}" "$WARP_APP_PATH" --entitlements script/Debug-Entitlements.plist
 
 if [ "$DONT_OPEN" = false ] ; then

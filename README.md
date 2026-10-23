@@ -74,11 +74,7 @@ own. Logging in through Harp is untested.
 Harp into Applications. Harp has its own bundle id (`com.dominikmartn.Harp`), URL scheme (`harp://`)
 and settings folder (`~/.harp`), so it runs next to Warp without sharing anything.
 
-**Updates:** Harp checks the latest GitHub release every 10 minutes, the same way Warp checks its
-own server. When the release's version is newer than `version` in `app/Cargo.toml` of the running
-build, Harp downloads its DMG in the background, checks that it is signed by Harp's Developer ID
-team, and offers to restart into it. To try this on an installed build, launch it with an older
-version: `open --env HARP_UPDATE_PRETEND_VERSION=0.0.1 /Applications/Harp.app`.
+**Updates:** this fork does not update itself. Rebuild from source to pick up changes.
 
 **Build from source** (macOS, Rust toolchain from `rust-toolchain.toml`):
 
@@ -87,9 +83,12 @@ version: `open --env HARP_UPDATE_PRETEND_VERSION=0.0.1 /Applications/Harp.app`.
 ./script/run         # builds target/debug/bundle/osx/Harp.app and launches it
 ```
 
-`script/macos/run` signs with the first "Apple Development" identity in your keychain and falls
-back to an ad-hoc signature. A signed, notarizable release DMG comes from `script/release_macos`
-(see `--help`).
+`script/macos/run` signs with a code-signing certificate named "Harp Local" if your keychain has one
+(a self-signed one from Keychain Access works), then the first "Apple Development" identity, then
+an ad-hoc signature. Only a named identity keeps macOS folder-access grants across rebuilds.
+`script/macos/install_local [--release]` builds the same way without launching and replaces
+`/Applications/Harp.app`. A signed, notarizable release DMG comes from `script/release_macos` (see
+`--help`).
 
 ## Settings
 

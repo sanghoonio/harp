@@ -1,0 +1,44 @@
+#!/bin/bash
+#
+# Builds Harp from this checkout and installs it as /Applications/Harp.app, replacing (and
+# trashing) the installed copy. Does not launch it.
+#
+# Usage: script/macos/install_local [--release]
+
+set -e
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/../.. && pwd)"
+cd "${REPO_ROOT}"
+
+INSTALLED_APP=/Applications/Harp.app
+if pgrep -f "$INSTALLED_APP/Contents/MacOS/" > /dev/null; then
+  echo "Harp is running; quit it first." >&2
+  exit 1
+fi
+
+PROFILE_DIR="debug"
+if [[ "$1" = "--release" ]]; then
+  PROFILE_DIR="release"
+fi
+
+# The Command Line Tools have no Metal compiler, which warpui's build script needs.
+if [[ -z "$DEVELOPER_DIR" && -d /Applications/Xcode.app ]]; then
+  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
+
+WARP_BIN_NAME=warp-oss WARP_CHANNEL=oss FEATURES=gui ./script/macos/run --dont-open "$@"
+
+TARGET_DIR="$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)"
+BUILT_APP="$TARGET_DIR/$PROFILE_DIR/bundle/osx/Harp.app"
+
+if [[ -d "$INSTALLED_APP" ]]; then
+  mv "$INSTALLED_APP" ~/.Trash/"Harp-replaced-$(date +%Y%m%d-%H%M%S).app"
+fi
+ditto "$BUILT_APP" "$INSTALLED_APP"
+
+# Register the new bundle so Finder picks up its services.
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$INSTALLED_APP"
+/System/Library/CoreServices/pbs -update
+
+codesign -d -r- "$INSTALLED_APP" 2>&1 | tail -1
+echo "Installed $INSTALLED_APP"
