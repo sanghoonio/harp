@@ -434,11 +434,9 @@ impl FontDB {
                     .collect::<Vec<_>>();
 
                 let font_id = {
-                    if let Ok(idx) = font_kit::matching::find_best_match(
-                        &candidates,
-                        &properties_to_font_kit(properties),
-                    ) {
-                        self.font(family.font_ids[idx]).properties();
+                    let requested = properties_to_font_kit(properties);
+                    if let Ok(idx) = font_kit::matching::find_best_match(&candidates, &requested) {
+                        let idx = closer_weight_match(&candidates, idx, requested.weight.0);
                         family.font_ids[idx]
                     } else {
                         font_kit::matching::find_best_match(&candidates, &Default::default())
@@ -684,6 +682,25 @@ impl crate::platform::TextLayoutSystem for FontDB {
             first_line_head_indent,
         )
     }
+}
+
+/// Swaps CSS matching's pick for a face of the same style and stretch whose weight is strictly
+/// closer to the request. CSS matching never rounds a 500 request up, and font-kit reads SF's
+/// Medium face as 530, so Medium otherwise renders as Regular.
+fn closer_weight_match(
+    candidates: &[font_kit::properties::Properties],
+    best: usize,
+    requested_weight: f32,
+) -> usize {
+    let chosen = candidates[best];
+    let distance = |idx: usize| (candidates[idx].weight.0 - requested_weight).abs();
+    (0..candidates.len())
+        .filter(|&idx| {
+            candidates[idx].style == chosen.style && candidates[idx].stretch == chosen.stretch
+        })
+        .min_by(|&a, &b| distance(a).total_cmp(&distance(b)))
+        .filter(|&idx| distance(idx) < distance(best))
+        .unwrap_or(best)
 }
 
 #[cfg(test)]

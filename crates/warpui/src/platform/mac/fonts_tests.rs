@@ -1,3 +1,5 @@
+use warpui_core::fonts::Weight;
+
 use super::*;
 
 // Loads a macOS system font family through the same inherent APIs the app uses.
@@ -62,4 +64,15 @@ fn font_id_for_native_font_round_trips_across_sizes() {
             "font at size {size} should resolve to its selected id"
         );
     }
+}
+
+#[test]
+fn system_font_medium_selects_medium_face() {
+    let mut db = FontDB::new();
+    let sf = load_family(&mut db, ".AppleSystemUIFont");
+    let face = |weight| db.select_font(sf, Properties::default().weight(weight));
+
+    let medium = face(Weight::Medium);
+    assert_ne!(medium, face(Weight::Normal));
+    assert_ne!(medium, face(Weight::Semibold));
 }
